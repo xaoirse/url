@@ -23,6 +23,11 @@ pub struct Opt {
 %p | path
 %q | query
 %f | fragment
+%@  Inserts an @ if user info is specified
+%:  Inserts a colon if a port is specified
+%?  Inserts a question mark if a query string exists
+%#  Inserts a hash if a fragment exists
+%%  A literal percent character
 ")]
     pattern: String,
     args: Vec<String>,
