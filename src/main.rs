@@ -67,10 +67,18 @@ impl Furl {
         }
     }
     fn authority(&self) -> Option<&str> {
-        Some(self.url.authority())
+        if self.url.authority().is_empty() {
+            None
+        } else {
+            Some(self.url.authority())
+        }
     }
     fn username(&self) -> Option<&str> {
-        Some(self.url.username())
+        if self.url.username().is_empty() {
+            None
+        } else {
+            Some(self.url.username())
+        }
     }
     fn password(&self) -> Option<&str> {
         self.url.password()
@@ -116,7 +124,11 @@ impl Furl {
     }
 
     fn path(&self) -> Option<&str> {
-        Some(self.url.path())
+        if self.url.path().is_empty() {
+            None
+        } else {
+            Some(self.url.path())
+        }
     }
     fn query(&self) -> Option<&str> {
         self.url.query()
@@ -136,11 +148,25 @@ impl Furl {
     fn fragment(&self) -> Option<&str> {
         self.url.fragment()
     }
+    fn at(&self) -> Option<&str> {
+        self.username().map(|_| "@")
+    }
+    fn colon(&self) -> Option<&str> {
+        self.port().map(|_| ":")
+    }
+    fn question(&self) -> Option<&str> {
+        self.query().map(|_| "?")
+    }
+    fn hashtag(&self) -> Option<&str> {
+        self.fragment().map(|_| "#")
+    }
+
     fn format(&self, pat: &str) -> Option<String> {
         use aho_corasick::AhoCorasick;
 
         let patterns = &[
-            "%s", "%a", "%u", "%x", "%d", "%S", "%r", "%t", "%P", "%p", "%q", "%f",
+            "%s", "%a", "%u", "%x", "%d", "%S", "%r", "%t", "%P", "%p", "%q", "%f", "%@", "%:",
+            "%?", "%#", "%%",
         ];
         let replace_with = &[
             self.scheme().unwrap_or_default(),
@@ -155,6 +181,11 @@ impl Furl {
             self.path().unwrap_or_default(),
             self.query().unwrap_or_default(),
             self.fragment().unwrap_or_default(),
+            self.at().unwrap_or_default(),
+            self.colon().unwrap_or_default(),
+            self.question().unwrap_or_default(),
+            self.hashtag().unwrap_or_default(),
+            "%",
         ];
 
         let ac = AhoCorasick::new(patterns);
