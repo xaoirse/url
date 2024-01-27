@@ -18,6 +18,7 @@ pub struct Opt {
 struct Furl {
     url: Url,
     scheme: bool,
+    port: Option<String>,
 }
 
 impl FromStr for Furl {
@@ -38,7 +39,9 @@ impl FromStr for Furl {
             Url::from_str(&format!("https://{s}"))?
         };
 
-        Ok(Self { url, scheme })
+        let port = url.port_or_known_default().map(|port| port.to_string());
+
+        Ok(Self { url, scheme, port })
     }
 }
 
@@ -94,6 +97,11 @@ impl Furl {
         }
         None
     }
+
+    fn port(&self) -> Option<&str> {
+        self.port.as_deref()
+    }
+
     fn path(&self) -> Option<&str> {
         Some(self.url.path())
     }
@@ -115,8 +123,33 @@ impl Furl {
     fn fragment(&self) -> Option<&str> {
         self.url.fragment()
     }
-    fn format(&self, _pat: &str) -> Option<&str> {
-        todo!()
+    fn format(&self, pat: &str) -> Option<String> {
+        use aho_corasick::AhoCorasick;
+
+        let patterns = &[
+            "%s", "%a", "%u", "%x", "%d", "%S", "%r", "%t", "%P", "%p", "%q", "%f",
+        ];
+        let replace_with = &[
+            self.scheme().unwrap_or_default(),
+            self.authority().unwrap_or_default(),
+            self.username().unwrap_or_default(),
+            self.password().unwrap_or_default(),
+            self.domain().unwrap_or_default(),
+            self.subdomain().unwrap_or_default(),
+            self.apex().unwrap_or_default(),
+            self.suffix().unwrap_or_default(),
+            self.port().unwrap_or_default(),
+            self.path().unwrap_or_default(),
+            self.query().unwrap_or_default(),
+            self.fragment().unwrap_or_default(),
+        ];
+
+        let ac = AhoCorasick::new(patterns);
+        if let Ok(ac) = ac {
+            Some(ac.replace_all(pat, replace_with))
+        } else {
+            None
+        }
     }
 }
 
@@ -135,6 +168,7 @@ static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
     "username" => Furl::username,
     "usernames" => Furl::username,
 
+    "x" => Furl::password,
     "pass" => Furl::password,
     "password" => Furl::password,
     "passwords" => Furl::password,
@@ -143,6 +177,7 @@ static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
     "domain"=> Furl::domain,
     "domains" => Furl::domain,
 
+    "S"=> Furl::subdomain,
     "sub"=> Furl::subdomain,
     "subdomain" => Furl::subdomain,
     "subdomains" => Furl::subdomain,
@@ -153,8 +188,13 @@ static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
     "apex"=> Furl::apex,
     "apexes" => Furl::apex,
 
+    "t" => Furl::suffix,
     "tld" => Furl::suffix,
     "suffix"=> Furl::suffix,
+
+    "P" => Furl::port,
+    "port" => Furl::port,
+    "ports" => Furl::port,
 
     "p"=> Furl::path,
     "path"  => Furl::path,

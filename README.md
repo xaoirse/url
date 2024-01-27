@@ -1,12 +1,13 @@
 ## URL
 Extract specific parts of URLs  
-Alternative for [unfurl](https://github.com/tomnomnom/unfurl)
+Fast Alternative for [unfurl](https://github.com/tomnomnom/unfurl)
 
 ### Compare
 ```bash
 # input stdin and parameters
 echo "foo.com" | url domain "bar.com" 
-
+# bar.com
+# foo.com
 
 # No icann domain
 echo example.domain | unfurl domain # example.domain
@@ -35,6 +36,5 @@ TODO
 TODO
 
 ### TODO
--[ ] Format
 -[ ] Tests  
 -[ ] JSON  

@@ -23,6 +23,7 @@ clap = { version = "4.4", features = [
     "wrap_help",
 ] }
 phf = { version = "0.11", features = ["macros"] }
+aho-corasick = "*"
 
 [profile.release]
 codegen-units = 1
