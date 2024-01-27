@@ -11,9 +11,6 @@ use url::Url;
 #[derive(Parser)]
 #[clap(name = "URL",author, version, about, long_about = None)]
 pub struct Opt {
-    #[clap(short, long, global = true, help = "Quiet mode")]
-    pub quiet: bool,
-
     pattern: String,
     args: Vec<String>,
 }
@@ -104,64 +101,112 @@ impl Furl {
         self.url.query()
     }
     fn keys(&self) -> Option<&str> {
-        todo!()
-        // Some(
-        //     self.url
-        //         .query_pairs()
-        //         .map(|pair| format!("{}\n", pair.0))
-        //         .collect::<String>()
-        //         .as_str(),
-        // )
+        self.url
+            .query_pairs()
+            .for_each(|pair| println!("{}", pair.0));
+        None
     }
     fn values(&self) -> Option<&str> {
-        todo!()
-        // Some(
-        //     self.url
-        //         .query_pairs()
-        //         .map(|pair| format!("{}\n", pair.1))
-        //         .collect::<String>()
-        //         .as_str(),
-        // )
+        self.url
+            .query_pairs()
+            .for_each(|pair| println!("{}", pair.1));
+        None
     }
     fn fragment(&self) -> Option<&str> {
         self.url.fragment()
     }
+    fn format(&self, _pat: &str) -> Option<&str> {
+        todo!()
+    }
 }
+
+static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
+    "s" => Furl::scheme,
+    "scheme" => Furl::scheme,
+    "schemes" => Furl::scheme,
+
+    "a"  => Furl::authority,
+    "auth" => Furl::authority,
+    "authority" => Furl::authority,
+
+    "u"  => Furl::username,
+    "user" => Furl::username,
+    "users"  => Furl::username,
+    "username" => Furl::username,
+    "usernames" => Furl::username,
+
+    "pass" => Furl::password,
+    "password" => Furl::password,
+    "passwords" => Furl::password,
+
+    "d" => Furl::domain,
+    "domain"=> Furl::domain,
+    "domains" => Furl::domain,
+
+    "sub"=> Furl::subdomain,
+    "subdomain" => Furl::subdomain,
+    "subdomains" => Furl::subdomain,
+
+    "r" => Furl::apex,
+    "root"=> Furl::apex,
+    "roots"  => Furl::apex,
+    "apex"=> Furl::apex,
+    "apexes" => Furl::apex,
+
+    "tld" => Furl::suffix,
+    "suffix"=> Furl::suffix,
+
+    "p"=> Furl::path,
+    "path"  => Furl::path,
+    "paths" => Furl::path,
+    "pathes" => Furl::path,
+
+    "q" => Furl::query,
+    "query"  => Furl::query,
+    "queries" => Furl::query,
+
+    "k"  => Furl::keys,
+    "key" => Furl::keys,
+    "keys" => Furl::keys,
+
+    "v" => Furl::values,
+    "val" => Furl::values,
+    "value"  => Furl::values,
+    "values" => Furl::values,
+
+    "f"=> Furl::fragment,
+    "fragment"=> Furl::fragment,
+    "fragments" => Furl::fragment,
+
+
+};
 
 fn main() {
     let opt = Opt::parse();
 
-    let mut buf = String::new();
+    let mut stdin = String::new();
     if !std::io::stdin().is_terminal() {
-        std::io::stdin().read_to_string(&mut buf).unwrap();
+        std::io::stdin().read_to_string(&mut stdin).unwrap();
     }
 
-    let f = match opt.pattern.as_str() {
-        "s" | "scheme" | "schemes" => Furl::scheme,
-        "a" | "authority" | "auth" => Furl::authority,
-        "u" | "username" | "usernames" => Furl::username,
-        "pass" | "password" | "passwords" => Furl::password,
-        "d" | "domain" | "domains" => Furl::domain,
-        "sub" | "subdomain" | "subdomains" => Furl::subdomain,
-        "r" | "root" | "roots" | "apex" | "apexes" => Furl::apex,
-        "suffix" | "tld" => Furl::suffix,
-        "p" | "path" | "paths" | "pathes" => Furl::path,
-        "q" | "query" | "queries" => Furl::query,
-        "k" | "key" | "keys" => Furl::keys,
-        "v" | "val" | "value" | "values" => Furl::values,
-        "f" | "fragment" | "fragments" => Furl::fragment,
-
-        _ => todo!(),
-    };
-
-    opt.args
+    let furls = opt
+        .args
         .iter()
         .map(String::as_str)
-        .chain(buf.split_ascii_whitespace())
-        .flat_map(Furl::from_str)
-        .for_each(|furl| {
-            if let Some(res) = f(&furl) {
+        .chain(stdin.split_ascii_whitespace())
+        .flat_map(Furl::from_str);
+
+    if let Some(func) = FUNC.get(&opt.pattern) {
+        furls.for_each(|furl| {
+            if let Some(res) = func(&furl) {
                 println!("{res}")
             }
-        })
+        });
+    } else {
+        furls.for_each(|furl| {
+            if let Some(res) = furl.format(opt.pattern.as_str()) {
+                println!("{res}")
+            }
+        });
+    }
 }

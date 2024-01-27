@@ -2,6 +2,14 @@
 name = "url"
 version = "0.1.0"
 edition = "2021"
+authors = ["SA <mxsadegh@gmail.com>"]
+description = "Extract specific parts of URLs"
+homepage = "https://github.com/xaoirse/url"
+repository = "https://github.com/xaoirse/url"
+keywords = ["url", "unfurl", "rust"]
+categories = ["command-line-utilities", "url-processing"]
+license = "All Rights Resevrd"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,3 +22,9 @@ clap = { version = "4.4", features = [
     "color",
     "wrap_help",
 ] }
+phf = { version = "0.11", features = ["macros"] }
+
+[profile.release]
+codegen-units = 1
+panic = "abort"
+lto = "fat"
