@@ -9,8 +9,21 @@ use clap::Parser;
 use url::Url;
 
 #[derive(Parser)]
-#[clap(name = "URL",author, version, about, long_about = None)]
+#[clap(name = "URL", author, version)]
 pub struct Opt {
+    #[clap(help = "%s | scheme
+%a | authority
+%u | username
+%x | password
+%d | domain
+%S | subdomain
+%r | apex | root
+%s | suffix
+%P | port
+%p | path
+%q | query
+%f | fragment
+")]
     pattern: String,
     args: Vec<String>,
 }

@@ -33,8 +33,31 @@ hyperfine 'url v "user:pass@www.domain.tld/path?l=p&p=o#s"' 'echo  "user:pass@ww
 TODO
 
 ### HELP
-TODO
+```bash
+url --help
+
+Usage: url <PATTERN> [ARGS]...
+
+Arguments:
+  <PATTERN>  %s | scheme
+             %a | authority
+             %u | username
+             %x | password
+             %d | domain
+             %S | subdomain
+             %r | apex | root
+             %s | suffix
+             %P | port
+             %p | path
+             %q | query
+             %f | fragment
+  [ARGS]...  
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
 
 ### TODO
--[ ] Tests  
--[ ] JSON  
+- [ ] Tests  
+- [ ] JSON  
