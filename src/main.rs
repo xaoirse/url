@@ -138,7 +138,7 @@ impl Furl {
         } else if self.scheme {
             Some(&self.url.as_str()[self.scheme().map(|s| s.len() + 2).unwrap_or_default()..])
         } else {
-            Some(&self.url.as_str()[7..])
+            Some(&self.url.as_str()[8..])
         }
     }
     fn query(&self) -> Option<&str> {
@@ -302,5 +302,60 @@ fn main() {
                 println!("{res}")
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_str() {
+        let a = Furl::from_str("https://test.com").unwrap();
+        assert_eq!(a.url, url::Url::from_str("https://test.com").unwrap());
+        assert!(a.scheme);
+        assert_eq!(a.port, Some("443".to_string()));
+
+        let a = Furl::from_str("test.com").unwrap();
+        assert_eq!(a.url, url::Url::from_str("https://test.com").unwrap());
+        assert!(!a.scheme);
+        assert_eq!(a.port, Some("443".to_string()));
+
+        let a = Furl::from_str("http://test.com:743").unwrap();
+        assert_eq!(a.url, url::Url::from_str("http://test.com:743").unwrap());
+        assert!(a.scheme);
+        assert_eq!(a.port, Some("743".to_string()));
+
+        let a = Furl::from_str("test.com:743").unwrap();
+        assert_eq!(a.url, url::Url::from_str("https://test.com:743/").unwrap());
+        assert!(!a.scheme);
+        assert_eq!(a.port, Some("743".to_string()));
+    }
+
+    #[test]
+    fn domain() {
+        assert_eq!(
+            Furl::from_str("https://test.com").unwrap().domain(),
+            Some("test.com")
+        );
+
+        assert_eq!(
+            Furl::from_str("test.com").unwrap().domain(),
+            Some("test.com")
+        );
+
+        assert_eq!(Furl::from_str("test.invalid").unwrap().domain(), None);
+
+        assert_eq!(
+            Furl::from_str("user:pass@test.com").unwrap().domain(),
+            Some("test.com")
+        );
+
+        assert_eq!(
+            Furl::from_str("test.com/foo/bar").unwrap().domain(),
+            Some("test.com")
+        );
+
+        assert_eq!(Furl::from_str("foo/bar").unwrap().domain(), None);
     }
 }

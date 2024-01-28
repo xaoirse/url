@@ -1,6 +1,6 @@
 ## URL
 Extract specific parts of URLs  
-Fast Alternative for [unfurl](https://github.com/tomnomnom/unfurl)
+A streamlined and feature-rich alternative to [unfurl](https://github.com/tomnomnom/unfurl)
 
 ### Compare
 ```bash
@@ -10,8 +10,8 @@ echo "foo.com" | url domain "bar.com"
 # foo.com
 
 # Just print icann domains
-echo example.domain | unfurl domain # example.domain
-echo example.domain | url    domain # 
+echo domain.invalid | unfurl domain # domain.invalid
+echo domain.invalid | url    domain # 
 
 # Recognize schemeless patterns
 echo user:pass@example.com | unfurl domain #
