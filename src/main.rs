@@ -93,7 +93,7 @@ impl Furl {
     }
     fn domain(&self) -> Option<&str> {
         if let Some(domain) = self.get_domain() {
-            if domain.is_icann() {
+            if domain.root().is_some() && domain.is_icann() {
                 return Some(domain.as_str());
             }
         }
@@ -129,10 +129,16 @@ impl Furl {
     }
 
     fn path(&self) -> Option<&str> {
-        if self.url.path().is_empty() {
-            None
+        if self.domain().is_some() {
+            if self.url.path().is_empty() {
+                None
+            } else {
+                Some(self.url.path())
+            }
+        } else if self.scheme {
+            Some(&self.url.as_str()[self.scheme().map(|s| s.len() + 2).unwrap_or_default()..])
         } else {
-            Some(self.url.path())
+            Some(&self.url.as_str()[7..])
         }
     }
     fn query(&self) -> Option<&str> {
@@ -248,7 +254,6 @@ static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
     "p"=> Furl::path,
     "path"  => Furl::path,
     "paths" => Furl::path,
-    "pathes" => Furl::path,
 
     "q" => Furl::query,
     "query"  => Furl::query,

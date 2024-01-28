@@ -11,11 +11,15 @@ echo "foo.com" | url domain "bar.com"
 
 # Just print icann domains
 echo example.domain | unfurl domain # example.domain
-echo example.domain | url domain # 
+echo example.domain | url    domain # 
 
 # Recognize schemeless patterns
 echo user:pass@example.com | unfurl domain #
-echo user:pass@example.com | url domain # example.com
+echo user:pass@example.com | url    domain # example.com
+
+# unfurl wrong answer on relative paths
+echo "foo/bar" | unfurl path # /bar
+echo "foo/bar" | url    path # /foo/bar
 ```
 
 ### Benchmark
@@ -70,3 +74,4 @@ Options:
 ### TODO
 - [ ] Tests  
 - [ ] JSON  
+- [ ] unique
