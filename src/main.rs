@@ -93,7 +93,7 @@ impl Furl {
     }
     fn domain(&self) -> Option<&str> {
         if let Some(domain) = self.get_domain() {
-            if domain.root().is_some() && domain.is_icann() {
+            if domain.root().is_some() && (domain.is_icann() || domain.is_private()) {
                 return Some(domain.as_str());
             }
         }
@@ -138,7 +138,7 @@ impl Furl {
         } else if self.scheme {
             Some(&self.url.as_str()[self.scheme().map(|s| s.len() + 2).unwrap_or_default()..])
         } else {
-            Some(&self.url.as_str()[8..])
+            Some(&self.url.as_str()[7..])
         }
     }
     fn query(&self) -> Option<&str> {
@@ -357,5 +357,17 @@ mod tests {
         );
 
         assert_eq!(Furl::from_str("foo/bar").unwrap().domain(), None);
+    }
+
+    #[test]
+    fn domain2() {
+        assert!(Furl::from_str(
+            "googleapis.com
+        "
+        )
+        .unwrap()
+        .get_domain()
+        .unwrap()
+        .is_private());
     }
 }
