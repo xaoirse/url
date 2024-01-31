@@ -35,10 +35,12 @@ hyperfine 'url v "user:pass@www.domain.tld/path?l=p&p=o#s"' 'echo  "user:pass@ww
 
 ### Install
 - Install [Rust](https://www.rust-lang.org/tools/install)  
-- `git clone https://github.com/xaoirse/url`
-- `cd url`
-- `cargo build --release`
-- `./target/release/url --help`
+```bash
+git clone https://github.com/xaoirse/url
+cd url
+cargo build --release
+./target/release/url --help
+```
 
 ### HELP
 ```bash
