@@ -9,7 +9,10 @@ echo "foo.com" | url domain "bar.com"
 # bar.com
 # foo.com
 
-# Just print icann domains
+# Name in domain
+url name "example.com" # example
+
+# Invalid domains
 echo domain.invalid | unfurl domain # domain.invalid
 echo domain.invalid | url    domain # 
 
@@ -50,13 +53,15 @@ Usage: url <PATTERN> [ARGS]...
 
 Arguments:
   <PATTERN>  %s | scheme
+             %c | default scheme https
              %a | authority
              %u | username
              %x | password
              %d | domain
              %S | subdomain
              %r | apex | root
-             %s | suffix
+             %n | name (example.tld -> example)
+             %t | tld | suffix
              %P | port
              %p | path
              %q | query

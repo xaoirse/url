@@ -12,17 +12,20 @@ use url::Url;
 #[clap(name = "URL", author, version)]
 pub struct Opt {
     #[clap(help = "%s | scheme
+%c | default scheme https
 %a | authority
 %u | username
 %x | password
 %d | domain
 %S | subdomain
 %r | apex | root
-%s | suffix
+%n | name (example.tld -> example)
+%t | tld | suffix
 %P | port
 %p | path
 %q | query
 %f | fragment
+%/ | Inserts a :// if scheme is specified
 %@  Inserts an @ if user info is specified
 %:  Inserts a colon if a port is specified
 %?  Inserts a question mark if a query string exists
@@ -71,6 +74,7 @@ impl Furl {
             None
         }
     }
+
     fn authority(&self) -> Option<&str> {
         if self.url.authority().is_empty() {
             None
@@ -111,6 +115,17 @@ impl Furl {
         if let Some(domain) = self.get_domain() {
             if domain.is_icann() {
                 return domain.root();
+            }
+        }
+        None
+    }
+    fn name(&self) -> Option<&str> {
+        if let Some(domain) = self.get_domain() {
+            if domain.is_icann() {
+                return domain.root().map(|r| {
+                    r.trim_end_matches(domain.suffix().unwrap_or_default())
+                        .trim_end_matches('.')
+                });
             }
         }
         None
@@ -159,6 +174,9 @@ impl Furl {
     fn fragment(&self) -> Option<&str> {
         self.url.fragment()
     }
+    fn slash(&self) -> Option<&str> {
+        self.scheme().map(|_| "://")
+    }
     fn at(&self) -> Option<&str> {
         self.username().map(|_| "@")
     }
@@ -176,22 +194,25 @@ impl Furl {
         use aho_corasick::AhoCorasick;
 
         let patterns = &[
-            "%s", "%a", "%u", "%x", "%d", "%S", "%r", "%t", "%P", "%p", "%q", "%f", "%@", "%:",
-            "%?", "%#", "%%",
+            "%s", "%c", "%a", "%u", "%x", "%d", "%S", "%r", "%n", "%t", "%P", "%p", "%q", "%f",
+            "%/", "%@", "%:", "%?", "%#", "%%",
         ];
         let replace_with = &[
             self.scheme().unwrap_or_default(),
+            self.scheme().unwrap_or("https"),
             self.authority().unwrap_or_default(),
             self.username().unwrap_or_default(),
             self.password().unwrap_or_default(),
             self.domain().unwrap_or_default(),
             self.subdomain().unwrap_or_default(),
             self.apex().unwrap_or_default(),
+            self.name().unwrap_or_default(),
             self.suffix().unwrap_or_default(),
             self.port().unwrap_or_default(),
             self.path().unwrap_or_default(),
             self.query().unwrap_or_default(),
             self.fragment().unwrap_or_default(),
+            self.slash().unwrap_or_default(),
             self.at().unwrap_or_default(),
             self.colon().unwrap_or_default(),
             self.question().unwrap_or_default(),
@@ -242,6 +263,10 @@ static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
     "roots"  => Furl::apex,
     "apex"=> Furl::apex,
     "apexes" => Furl::apex,
+
+    "n" => Furl::name,
+    "name"=> Furl::name,
+    "names"=> Furl::name,
 
     "t" => Furl::suffix,
     "tld" => Furl::suffix,
