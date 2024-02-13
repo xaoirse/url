@@ -1,18 +1,21 @@
 use std::{
+    collections::BTreeSet,
     error::Error,
     io::{IsTerminal, Read},
+    ops::Sub,
     str::FromStr,
 };
 
 use addr::parse_dns_name;
 use clap::Parser;
+// use itertools::Itertools;
 use url::Url;
 
 #[derive(Parser)]
 #[clap(name = "URL", author, version)]
 pub struct Opt {
     #[clap(help = "%s | scheme
-%c | default scheme https
+%c | url-like with scheme (https is default)
 %a | authority
 %u | username
 %x | password
@@ -31,15 +34,16 @@ pub struct Opt {
 %?  Inserts a question mark if a query string exists
 %#  Inserts a hash if a fragment exists
 %%  A literal percent character
+dedup
 ")]
     pattern: String,
     args: Vec<String>,
 }
-
+#[derive(Debug)]
 struct Furl {
     url: Url,
     scheme: bool,
-    port: Option<String>,
+    port: String,
 }
 
 impl FromStr for Furl {
@@ -60,134 +64,137 @@ impl FromStr for Furl {
             Url::from_str(&format!("https://{s}"))?
         };
 
-        let port = url.port_or_known_default().map(|port| port.to_string());
+        let port = url
+            .port_or_known_default()
+            .map(|port| port.to_string())
+            .unwrap_or_default();
 
         Ok(Self { url, scheme, port })
     }
 }
 
 impl Furl {
-    fn scheme(&self) -> Option<&str> {
-        if self.scheme {
-            Some(self.url.scheme())
-        } else {
-            None
-        }
+    fn scheme(&self) -> &str {
+        self.url.scheme()
     }
 
-    fn authority(&self) -> Option<&str> {
-        if self.url.authority().is_empty() {
-            None
-        } else {
-            Some(self.url.authority())
-        }
+    fn url(&self) -> &str {
+        self.url.as_str()
     }
-    fn username(&self) -> Option<&str> {
-        if self.url.username().is_empty() {
-            None
-        } else {
-            Some(self.url.username())
-        }
+
+    fn authority(&self) -> &str {
+        self.url.authority()
     }
-    fn password(&self) -> Option<&str> {
-        self.url.password()
+    fn username(&self) -> &str {
+        self.url.username()
+    }
+    fn password(&self) -> &str {
+        self.url.password().unwrap_or_default()
     }
     fn get_domain(&self) -> Option<addr::dns::Name<'_>> {
-        self.url.domain().and_then(|d| parse_dns_name(d).ok())
+        self.url.domain().and_then(|d| {
+            parse_dns_name(d)
+                .ok()
+                .filter(|d| d.is_icann() || d.is_private())
+        })
     }
-    fn domain(&self) -> Option<&str> {
+    fn domain(&self) -> &str {
         if let Some(domain) = self.get_domain() {
-            if domain.root().is_some() && (domain.is_icann() || domain.is_private()) {
-                return Some(domain.as_str());
+            return domain.as_str();
+        }
+        ""
+    }
+    fn subdomain(&self) -> &str {
+        if let Some(domain) = self.get_domain() {
+            return domain.prefix().unwrap_or_default();
+        }
+        ""
+    }
+    fn apex(&self) -> &str {
+        if let Some(domain) = self.get_domain() {
+            return domain.root().unwrap_or_default();
+        }
+        ""
+    }
+    fn name(&self) -> &str {
+        if let Some(domain) = self.get_domain() {
+            if let Some(root) = domain.root() {
+                return root
+                    .trim_end_matches(domain.suffix().unwrap_or_default())
+                    .trim_end_matches('.');
             }
         }
-        None
+        ""
     }
-    fn subdomain(&self) -> Option<&str> {
-        if let Some(domain) = self.get_domain() {
-            if domain.is_icann() {
-                return domain.prefix();
-            }
-        }
-        None
-    }
-    fn apex(&self) -> Option<&str> {
-        if let Some(domain) = self.get_domain() {
-            if domain.is_icann() {
-                return domain.root();
-            }
-        }
-        None
-    }
-    fn name(&self) -> Option<&str> {
-        if let Some(domain) = self.get_domain() {
-            if domain.is_icann() {
-                return domain.root().map(|r| {
-                    r.trim_end_matches(domain.suffix().unwrap_or_default())
-                        .trim_end_matches('.')
-                });
-            }
-        }
-        None
-    }
-    fn suffix(&self) -> Option<&str> {
-        if let Some(domain) = self.get_domain() {
-            if domain.is_icann() {
-                return domain.suffix();
-            }
-        }
-        None
+    fn suffix(&self) -> &str {
+        self.domain().rsplit_once('.').unwrap_or_default().1
     }
 
-    fn port(&self) -> Option<&str> {
-        self.port.as_deref()
+    fn port(&self) -> &str {
+        self.port.as_str()
     }
 
-    fn path(&self) -> Option<&str> {
-        if self.domain().is_some() {
-            if self.url.path().is_empty() {
-                None
-            } else {
-                Some(self.url.path())
-            }
+    fn path(&self) -> &str {
+        if !self.domain().is_empty() {
+            self.url.path()
         } else if self.scheme {
-            Some(&self.url.as_str()[self.scheme().map(|s| s.len() + 2).unwrap_or_default()..])
+            &self.url.as_str()[self.scheme().len() + 2..]
         } else {
-            Some(&self.url.as_str()[7..])
+            &self.url.as_str()[7..]
         }
     }
-    fn query(&self) -> Option<&str> {
-        self.url.query()
+    fn query(&self) -> &str {
+        self.url.query().unwrap_or_default()
     }
-    fn keys(&self) -> Option<&str> {
+    fn keys(&self) -> &str {
         self.url
             .query_pairs()
             .for_each(|pair| println!("{}", pair.0));
-        None
+        ""
     }
-    fn values(&self) -> Option<&str> {
+    fn values(&self) -> &str {
         self.url
             .query_pairs()
             .for_each(|pair| println!("{}", pair.1));
-        None
+        ""
     }
-    fn fragment(&self) -> Option<&str> {
-        self.url.fragment()
+    fn fragment(&self) -> &str {
+        self.url.fragment().unwrap_or_default()
     }
-    fn slash(&self) -> Option<&str> {
-        self.scheme().map(|_| "://")
+    fn slash(&self) -> &str {
+        if !self.scheme().is_empty() {
+            "://"
+        } else {
+            ""
+        }
     }
-    fn at(&self) -> Option<&str> {
-        self.username().map(|_| "@")
+    fn at(&self) -> &str {
+        if !self.username().is_empty() {
+            "@"
+        } else {
+            ""
+        }
     }
-    fn colon(&self) -> Option<&str> {
-        self.port().map(|_| ":")
+    fn colon(&self) -> &str {
+        if !self.port().is_empty() {
+            ":"
+        } else {
+            ""
+        }
     }
-    fn question(&self) -> Option<&str> {
-        self.query().map(|_| "?")
+    fn question(&self) -> &str {
+        if !self.query().is_empty() {
+            "?"
+        } else {
+            ""
+        }
     }
-    fn hashtag(&self) -> Option<&str> {
-        self.fragment().map(|_| "#")
+    fn hashtag(&self) -> &str {
+        if !self.fragment().is_empty() {
+            "#"
+        } else {
+            ""
+        }
     }
 
     fn format(&self, pat: &str) -> Option<String> {
@@ -198,25 +205,25 @@ impl Furl {
             "%/", "%@", "%:", "%?", "%#", "%%",
         ];
         let replace_with = &[
-            self.scheme().unwrap_or_default(),
-            self.scheme().unwrap_or("https"),
-            self.authority().unwrap_or_default(),
-            self.username().unwrap_or_default(),
-            self.password().unwrap_or_default(),
-            self.domain().unwrap_or_default(),
-            self.subdomain().unwrap_or_default(),
-            self.apex().unwrap_or_default(),
-            self.name().unwrap_or_default(),
-            self.suffix().unwrap_or_default(),
-            self.port().unwrap_or_default(),
-            self.path().unwrap_or_default(),
-            self.query().unwrap_or_default(),
-            self.fragment().unwrap_or_default(),
-            self.slash().unwrap_or_default(),
-            self.at().unwrap_or_default(),
-            self.colon().unwrap_or_default(),
-            self.question().unwrap_or_default(),
-            self.hashtag().unwrap_or_default(),
+            self.scheme(),
+            self.url(),
+            self.authority(),
+            self.username(),
+            self.password(),
+            self.domain(),
+            self.subdomain(),
+            self.apex(),
+            self.name(),
+            self.suffix(),
+            self.port(),
+            self.path(),
+            self.query(),
+            self.fragment(),
+            self.slash(),
+            self.at(),
+            self.colon(),
+            self.question(),
+            self.hashtag(),
             "%",
         ];
 
@@ -227,12 +234,18 @@ impl Furl {
             None
         }
     }
+    fn json(&self) -> &str {
+        todo!()
+    }
 }
 
-static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
+static FUNC: phf::Map<&'static str, fn(&Furl) -> &str> = phf::phf_map! {
     "s" => Furl::scheme,
     "scheme" => Furl::scheme,
     "schemes" => Furl::scheme,
+
+    "c" => Furl::url,
+    "url" => Furl::url,
 
     "a"  => Furl::authority,
     "auth" => Furl::authority,
@@ -297,7 +310,7 @@ static FUNC: phf::Map<&'static str, fn(&Furl) -> Option<&str>> = phf::phf_map! {
     "fragment"=> Furl::fragment,
     "fragments" => Furl::fragment,
 
-
+    "json"=> Furl::json,
 };
 
 fn main() {
@@ -315,9 +328,25 @@ fn main() {
         .chain(stdin.split_ascii_whitespace())
         .flat_map(Furl::from_str);
 
-    if let Some(func) = FUNC.get(&opt.pattern) {
+    if opt.pattern == "dedup" {
+        let mut args = furls.collect::<Vec<_>>();
+        args.sort();
+        args.dedup_by(|a, b| {
+            if a == b {
+                b.url.query_pairs_mut().extend_pairs(a.url.query_pairs());
+                true
+            } else {
+                false
+            }
+        });
+
+        for f in args {
+            println!("{}", f.url);
+        }
+    } else if let Some(func) = FUNC.get(&opt.pattern) {
         furls.for_each(|furl| {
-            if let Some(res) = func(&furl) {
+            let res = func(&furl);
+            if !res.is_empty() {
                 println!("{res}")
             }
         });
@@ -330,6 +359,59 @@ fn main() {
     }
 }
 
+impl Ord for Furl {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.scheme().cmp(other.scheme()) {
+            std::cmp::Ordering::Equal => match self.authority().cmp(other.authority()) {
+                std::cmp::Ordering::Equal => {
+                    match (self.url.path_segments(), other.url.path_segments()) {
+                        (Some(sp), Some(op)) => {
+                            let sp = sp
+                                .filter(|s| !s.chars().all(|c| c.is_numeric()))
+                                .collect::<BTreeSet<_>>();
+                            let op = op
+                                .filter(|s| !s.chars().all(|c| c.is_numeric()))
+                                .collect::<BTreeSet<_>>();
+
+                            if sp.len() == op.len() {
+                                let so = sp.sub(&op);
+                                let os = op.sub(&sp);
+
+                                if so.len() > 1 || os.len() > 1 {
+                                    return so.cmp(&os);
+                                } else {
+                                    return std::cmp::Ordering::Equal;
+                                }
+                            }
+
+                            sp.len().cmp(&op.len())
+                        }
+                        (None, None) => std::cmp::Ordering::Equal,
+                        (Some(_), None) => std::cmp::Ordering::Greater,
+                        (None, Some(_)) => std::cmp::Ordering::Less,
+                    }
+                }
+
+                o => o,
+            },
+            o => o,
+        }
+    }
+}
+
+impl PartialOrd for Furl {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl PartialEq for Furl {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for Furl {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,60 +421,104 @@ mod tests {
         let a = Furl::from_str("https://test.com").unwrap();
         assert_eq!(a.url, url::Url::from_str("https://test.com").unwrap());
         assert!(a.scheme);
-        assert_eq!(a.port, Some("443".to_string()));
+        assert_eq!(a.port, "443".to_string());
 
         let a = Furl::from_str("test.com").unwrap();
         assert_eq!(a.url, url::Url::from_str("https://test.com").unwrap());
         assert!(!a.scheme);
-        assert_eq!(a.port, Some("443".to_string()));
+        assert_eq!(a.port, "443".to_string());
 
         let a = Furl::from_str("http://test.com:743").unwrap();
         assert_eq!(a.url, url::Url::from_str("http://test.com:743").unwrap());
         assert!(a.scheme);
-        assert_eq!(a.port, Some("743".to_string()));
+        assert_eq!(a.port, "743".to_string());
 
         let a = Furl::from_str("test.com:743").unwrap();
         assert_eq!(a.url, url::Url::from_str("https://test.com:743/").unwrap());
         assert!(!a.scheme);
-        assert_eq!(a.port, Some("743".to_string()));
+        assert_eq!(a.port, "743".to_string());
     }
 
     #[test]
     fn domain() {
         assert_eq!(
             Furl::from_str("https://test.com").unwrap().domain(),
-            Some("test.com")
+            "test.com"
         );
 
-        assert_eq!(
-            Furl::from_str("test.com").unwrap().domain(),
-            Some("test.com")
-        );
+        assert_eq!(Furl::from_str("test.com").unwrap().domain(), "test.com");
 
-        assert_eq!(Furl::from_str("test.invalid").unwrap().domain(), None);
+        assert_eq!(Furl::from_str("test.invalid").unwrap().domain(), "");
 
         assert_eq!(
             Furl::from_str("user:pass@test.com").unwrap().domain(),
-            Some("test.com")
+            "test.com"
         );
 
         assert_eq!(
             Furl::from_str("test.com/foo/bar").unwrap().domain(),
-            Some("test.com")
+            "test.com"
         );
 
-        assert_eq!(Furl::from_str("foo/bar").unwrap().domain(), None);
+        assert_eq!(Furl::from_str("foo/bar").unwrap().domain(), "");
     }
 
     #[test]
     fn domain2() {
-        assert!(Furl::from_str(
-            "googleapis.com
-        "
-        )
-        .unwrap()
-        .get_domain()
-        .unwrap()
-        .is_private());
+        assert!(Furl::from_str("googleapis.com")
+            .unwrap()
+            .get_domain()
+            .unwrap()
+            .is_private());
+    }
+
+    #[test]
+    fn furl_eq() {
+        let a = Furl::from_str("test.com/a/b").unwrap();
+        let b = Furl::from_str("test.com/a/b").unwrap();
+        assert_eq!(a, b);
+
+        let a = Furl::from_str("https://test.com/a/b").unwrap();
+        let b = Furl::from_str("https://test.com/a/b").unwrap();
+        assert_eq!(a, b);
+
+        let a = Furl::from_str("test.com/a/b?k=v").unwrap();
+        let b = Furl::from_str("test.com/a/b?j=r").unwrap();
+        assert_eq!(a, b);
+
+        let a = Furl::from_str("test.com/a/b").unwrap();
+        let b = Furl::from_str("test.com/a/c").unwrap();
+        assert_ne!(a, b);
+
+        let a = Furl::from_str("test.com/a/b/c").unwrap();
+        let b = Furl::from_str("test.com/a/c/d").unwrap();
+        assert_ne!(a, b);
+
+        let a = Furl::from_str("test.com/a/b/c").unwrap();
+        let b = Furl::from_str("test.com/a/d").unwrap();
+        assert!(a.gt(&b));
+
+        let a = Furl::from_str("test.com/a/b/e").unwrap();
+        let b = Furl::from_str("test.com/a/x/d").unwrap();
+        assert!(a.lt(&b));
+
+        let a = Furl::from_str("ftp://test.com/a/b/e").unwrap();
+        let b = Furl::from_str("test.com/a/x/d").unwrap();
+        assert!(a.lt(&b));
+    }
+
+    #[test]
+    fn furl_ne() {
+        let a = Furl::from_str("test.com/a/b").unwrap();
+        let b = Furl::from_str("test.com/a/c/d/fs").unwrap();
+        assert_ne!(a, b);
+
+        let a = Furl::from_str("test.com/a/b").unwrap();
+        let b = Furl::from_str("test.com/a/c").unwrap();
+        assert_ne!(a, b);
+
+        let a = Furl::from_str("test.com/a/b/c").unwrap();
+        let b = Furl::from_str("test.com/a/c/d").unwrap();
+        assert_ne!(a, b);
     }
 }

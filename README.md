@@ -53,7 +53,7 @@ Usage: url <PATTERN> [ARGS]...
 
 Arguments:
   <PATTERN>  %s | scheme
-             %c | default scheme https
+             %c | url-like with scheme (https is default)
              %a | authority
              %u | username
              %x | password
@@ -71,6 +71,7 @@ Arguments:
              %?  Inserts a question mark if a query string exists
              %#  Inserts a hash if a fragment exists
              %%  A literal percent character
+             dedup
   [ARGS]...  
 
 Options:
@@ -81,4 +82,4 @@ Options:
 ### TODO
 - [ ] Tests  
 - [ ] JSON  
-- [ ] unique
+- [x] dedup
