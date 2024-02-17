@@ -1,14 +1,12 @@
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     error::Error,
     io::{IsTerminal, Read},
-    ops::Sub,
     str::FromStr,
 };
 
 use addr::parse_dns_name;
 use clap::Parser;
-// use itertools::Itertools;
 use url::Url;
 
 #[derive(Parser)]
@@ -42,34 +40,64 @@ dedup
 #[derive(Debug)]
 struct Furl {
     url: Url,
-    scheme: bool,
     port: String,
 }
 
 impl FromStr for Furl {
     type Err = Box<dyn Error>;
 
+    /// # Other way to do from_str
+    ///```
+    /// let url = match Url::from_str(s)
+    ///     .ok()
+    ///     .filter(|url| !url.cannot_be_a_base())
+    ///     .or(Url::from_str(&format!("https://{s}")).ok())
+    /// {
+    ///     Some(url) => {
+    ///         if let Ok(domain) = parse_dns_name(url.domain().unwrap_or_default()) {
+    ///             if (domain.root().is_some() && domain.is_icann()) || domain.is_private() {
+    ///                 url
+    ///             } else {
+    ///                 Err("invalid domain")?
+    ///             }
+    ///         } else {
+    ///             Err("parse dns error")?
+    ///         }
+    ///     }
+    ///     None => Err("Not a URL")?,
+    /// };
+    ///```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut scheme = true;
-
-        let url = if let Ok(url) = Url::from_str(s) {
-            if url.cannot_be_a_base() {
-                scheme = false;
-                Url::from_str(&format!("https://{s}"))?
-            } else {
-                url
+        let url = match Url::from_str(s)
+            .and_then(|url| {
+                if url.cannot_be_a_base() {
+                    Err(url::ParseError::EmptyHost)
+                } else {
+                    Ok(url)
+                }
+            })
+            .or_else(|_| Url::from_str(&format!("https://{s}")))
+        {
+            Ok(url) => {
+                if let Ok(domain) = parse_dns_name(url.domain().unwrap_or_default()) {
+                    if (domain.root().is_some() && domain.is_icann()) || domain.is_private() {
+                        Ok(url)
+                    } else {
+                        Err("invalid domain")?
+                    }
+                } else {
+                    Err("parse dns error")?
+                }
             }
-        } else {
-            scheme = false;
-            Url::from_str(&format!("https://{s}"))?
-        };
+            Err(err) => Err(err),
+        }?;
 
         let port = url
             .port_or_known_default()
             .map(|port| port.to_string())
             .unwrap_or_default();
 
-        Ok(Self { url, scheme, port })
+        Ok(Self { url, port })
     }
 }
 
@@ -92,11 +120,7 @@ impl Furl {
         self.url.password().unwrap_or_default()
     }
     fn get_domain(&self) -> Option<addr::dns::Name<'_>> {
-        self.url.domain().and_then(|d| {
-            parse_dns_name(d)
-                .ok()
-                .filter(|d| d.is_icann() || d.is_private())
-        })
+        self.url.domain().and_then(|d| parse_dns_name(d).ok())
     }
     fn domain(&self) -> &str {
         if let Some(domain) = self.get_domain() {
@@ -137,10 +161,8 @@ impl Furl {
     fn path(&self) -> &str {
         if !self.domain().is_empty() {
             self.url.path()
-        } else if self.scheme {
-            &self.url.as_str()[self.scheme().len() + 2..]
         } else {
-            &self.url.as_str()[7..]
+            &self.url.as_str()[self.scheme().len() + 2..]
         }
     }
     fn query(&self) -> &str {
@@ -333,7 +355,17 @@ fn main() {
         args.sort();
         args.dedup_by(|a, b| {
             if a == b {
-                b.url.query_pairs_mut().extend_pairs(a.url.query_pairs());
+                // Uniqe keys because of using map
+                let pairs: BTreeMap<_, _> =
+                    b.url.query_pairs().chain(a.url.query_pairs()).collect();
+
+                let pairs = pairs
+                    .into_iter()
+                    .map(|(a, b)| format!("{a}={b}"))
+                    .collect::<Vec<String>>()
+                    .join("&");
+
+                b.url.set_query(Some(&pairs));
                 true
             } else {
                 false
@@ -353,7 +385,9 @@ fn main() {
     } else {
         furls.for_each(|furl| {
             if let Some(res) = furl.format(opt.pattern.as_str()) {
-                println!("{res}")
+                if !res.is_empty() {
+                    println!("{res}")
+                }
             }
         });
     }
@@ -368,20 +402,29 @@ impl Ord for Furl {
                         (Some(sp), Some(op)) => {
                             let sp = sp
                                 .filter(|s| !s.chars().all(|c| c.is_numeric()))
-                                .collect::<BTreeSet<_>>();
+                                .collect::<Vec<_>>();
                             let op = op
                                 .filter(|s| !s.chars().all(|c| c.is_numeric()))
-                                .collect::<BTreeSet<_>>();
+                                .collect::<Vec<_>>();
 
                             if sp.len() == op.len() {
-                                let so = sp.sub(&op);
-                                let os = op.sub(&sp);
+                                let mut diff = 0;
+                                let mut o = std::cmp::Ordering::Equal;
+                                for i in 0..sp.len() {
+                                    if sp[i] != op[i] {
+                                        diff += 1;
 
-                                if so.len() > 1 || os.len() > 1 {
-                                    return so.cmp(&os);
-                                } else {
-                                    return std::cmp::Ordering::Equal;
+                                        match diff {
+                                            ..=1 => o = sp[i].cmp(op[i]),
+                                            2.. => break,
+                                        }
+                                    }
                                 }
+
+                                if diff > 1 {
+                                    return o;
+                                }
+                                return std::cmp::Ordering::Equal;
                             }
 
                             sp.len().cmp(&op.len())
@@ -420,23 +463,19 @@ mod tests {
     fn from_str() {
         let a = Furl::from_str("https://test.com").unwrap();
         assert_eq!(a.url, url::Url::from_str("https://test.com").unwrap());
-        assert!(a.scheme);
         assert_eq!(a.port, "443".to_string());
 
         let a = Furl::from_str("test.com").unwrap();
         assert_eq!(a.url, url::Url::from_str("https://test.com").unwrap());
-        assert!(!a.scheme);
         assert_eq!(a.port, "443".to_string());
 
         let a = Furl::from_str("http://test.com:743").unwrap();
         assert_eq!(a.url, url::Url::from_str("http://test.com:743").unwrap());
-        assert!(a.scheme);
         assert_eq!(a.port, "743".to_string());
 
-        let a = Furl::from_str("test.com:743").unwrap();
-        assert_eq!(a.url, url::Url::from_str("https://test.com:743/").unwrap());
-        assert!(!a.scheme);
-        assert_eq!(a.port, "743".to_string());
+        let a = Furl::from_str("test.com:103").unwrap();
+        assert_eq!(a.url, url::Url::from_str("https://test.com:103").unwrap());
+        assert_eq!(a.port, "103".to_string());
     }
 
     #[test]
@@ -448,7 +487,7 @@ mod tests {
 
         assert_eq!(Furl::from_str("test.com").unwrap().domain(), "test.com");
 
-        assert_eq!(Furl::from_str("test.invalid").unwrap().domain(), "");
+        assert!(Furl::from_str("test.invalid").is_err());
 
         assert_eq!(
             Furl::from_str("user:pass@test.com").unwrap().domain(),
@@ -460,16 +499,21 @@ mod tests {
             "test.com"
         );
 
-        assert_eq!(Furl::from_str("foo/bar").unwrap().domain(), "");
+        assert!(Furl::from_str("foo/bar").is_err());
     }
 
     #[test]
     fn domain2() {
-        assert!(Furl::from_str("googleapis.com")
-            .unwrap()
-            .get_domain()
-            .unwrap()
-            .is_private());
+        let d = parse_dns_name("googleapis.com").unwrap();
+        assert!(d.is_private());
+        assert_eq!(d.suffix().unwrap(), "googleapis.com");
+        assert!(d.is_private());
+        assert!(!d.is_icann());
+        assert!(d.root().is_none());
+
+        let d = Furl::from_str("googleapis.com").unwrap();
+
+        assert_eq!(d.domain(), "googleapis.com")
     }
 
     #[test]
@@ -488,7 +532,7 @@ mod tests {
 
         let a = Furl::from_str("test.com/a/b").unwrap();
         let b = Furl::from_str("test.com/a/c").unwrap();
-        assert_ne!(a, b);
+        assert_eq!(a, b);
 
         let a = Furl::from_str("test.com/a/b/c").unwrap();
         let b = Furl::from_str("test.com/a/c/d").unwrap();
@@ -513,12 +557,24 @@ mod tests {
         let b = Furl::from_str("test.com/a/c/d/fs").unwrap();
         assert_ne!(a, b);
 
-        let a = Furl::from_str("test.com/a/b").unwrap();
-        let b = Furl::from_str("test.com/a/c").unwrap();
-        assert_ne!(a, b);
-
         let a = Furl::from_str("test.com/a/b/c").unwrap();
         let b = Furl::from_str("test.com/a/c/d").unwrap();
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn sort() {
+        let a = Furl::from_str("https://memoryleaks.ir/tag/%d9%87%da%a9/").unwrap();
+        let b = Furl::from_str("https://memoryleaks.ir/author/soloboy/").unwrap();
+        let c = Furl::from_str("https://memoryleaks.ir/tag/rce/").unwrap();
+
+        let mut v = vec![a, b, c];
+        v.sort();
+
+        let a = Furl::from_str("https://memoryleaks.ir/tag/%d9%87%da%a9/").unwrap();
+        let b = Furl::from_str("https://memoryleaks.ir/author/soloboy/").unwrap();
+        let c = Furl::from_str("https://memoryleaks.ir/tag/rce/").unwrap();
+
+        assert_eq!(v, vec![b, a, c]);
     }
 }
