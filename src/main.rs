@@ -68,16 +68,13 @@ impl FromStr for Furl {
     /// };
     ///```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = match Url::from_str(s)
-            .and_then(|url| {
-                if url.cannot_be_a_base() {
-                    Err(url::ParseError::EmptyHost)
-                } else {
-                    Ok(url)
-                }
-            })
-            .or_else(|_| Url::from_str(&format!("https://{s}")))
-        {
+        let url = match Url::from_str(s).and_then(|url| {
+            if url.cannot_be_a_base() {
+                Err(url::ParseError::EmptyHost)
+            } else {
+                Ok(url)
+            }
+        }) {
             Ok(url) => {
                 if let Ok(domain) = parse_dns_name(url.domain().unwrap_or_default()) {
                     if (domain.root().is_some() && domain.is_icann()) || domain.is_private() {
@@ -89,7 +86,7 @@ impl FromStr for Furl {
                     Err("parse dns error")?
                 }
             }
-            Err(err) => Err(err),
+            Err(_) => Url::from_str(&format!("https://{s}")),
         }?;
 
         let port = url
@@ -124,7 +121,9 @@ impl Furl {
     }
     fn domain(&self) -> &str {
         if let Some(domain) = self.get_domain() {
-            return domain.as_str();
+            if (domain.root().is_some() && domain.is_icann()) || domain.is_private() {
+                return domain.as_str();
+            }
         }
         ""
     }
