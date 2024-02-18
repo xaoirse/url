@@ -82,4 +82,5 @@ Options:
 ### TODO
 - [ ] Tests  
 - [ ] JSON  
-- [x] dedup
+- [x] Deduplicate  
+- [ ] Clean code

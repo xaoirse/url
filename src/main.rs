@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering::{self, Equal, Greater, Less},
     collections::BTreeMap,
     error::Error,
     io::{IsTerminal, Read},
@@ -68,13 +69,16 @@ impl FromStr for Furl {
     /// };
     ///```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = match Url::from_str(s).and_then(|url| {
-            if url.cannot_be_a_base() {
-                Err(url::ParseError::EmptyHost)
-            } else {
-                Ok(url)
-            }
-        }) {
+        let url = match Url::from_str(s)
+            .and_then(|url| {
+                if url.cannot_be_a_base() {
+                    Err(url::ParseError::EmptyHost)
+                } else {
+                    Ok(url)
+                }
+            })
+            .or(Url::from_str(&format!("https://{s}")))
+        {
             Ok(url) => {
                 if let Ok(domain) = parse_dns_name(url.domain().unwrap_or_default()) {
                     if (domain.root().is_some() && domain.is_icann()) || domain.is_private() {
@@ -86,7 +90,7 @@ impl FromStr for Furl {
                     Err("parse dns error")?
                 }
             }
-            Err(_) => Url::from_str(&format!("https://{s}")),
+            Err(err) => Err(err),
         }?;
 
         let port = url
@@ -110,35 +114,44 @@ impl Furl {
     fn authority(&self) -> &str {
         self.url.authority()
     }
+
     fn username(&self) -> &str {
         self.url.username()
     }
+
     fn password(&self) -> &str {
         self.url.password().unwrap_or_default()
     }
+
     fn get_domain(&self) -> Option<addr::dns::Name<'_>> {
-        self.url.domain().and_then(|d| parse_dns_name(d).ok())
+        self.url.domain().and_then(|d| {
+            parse_dns_name(d).ok().filter(|domain| {
+                (domain.root().is_some() && domain.is_icann()) || domain.is_private()
+            })
+        })
     }
+
     fn domain(&self) -> &str {
         if let Some(domain) = self.get_domain() {
-            if (domain.root().is_some() && domain.is_icann()) || domain.is_private() {
-                return domain.as_str();
-            }
+            return domain.as_str();
         }
         ""
     }
+
     fn subdomain(&self) -> &str {
         if let Some(domain) = self.get_domain() {
             return domain.prefix().unwrap_or_default();
         }
         ""
     }
+
     fn apex(&self) -> &str {
         if let Some(domain) = self.get_domain() {
             return domain.root().unwrap_or_default();
         }
         ""
     }
+
     fn name(&self) -> &str {
         if let Some(domain) = self.get_domain() {
             if let Some(root) = domain.root() {
@@ -149,6 +162,7 @@ impl Furl {
         }
         ""
     }
+
     fn suffix(&self) -> &str {
         self.domain().rsplit_once('.').unwrap_or_default().1
     }
@@ -164,24 +178,29 @@ impl Furl {
             &self.url.as_str()[self.scheme().len() + 2..]
         }
     }
+
     fn query(&self) -> &str {
         self.url.query().unwrap_or_default()
     }
+
     fn keys(&self) -> &str {
         self.url
             .query_pairs()
             .for_each(|pair| println!("{}", pair.0));
         ""
     }
+
     fn values(&self) -> &str {
         self.url
             .query_pairs()
             .for_each(|pair| println!("{}", pair.1));
         ""
     }
+
     fn fragment(&self) -> &str {
         self.url.fragment().unwrap_or_default()
     }
+
     fn slash(&self) -> &str {
         if !self.scheme().is_empty() {
             "://"
@@ -189,6 +208,7 @@ impl Furl {
             ""
         }
     }
+
     fn at(&self) -> &str {
         if !self.username().is_empty() {
             "@"
@@ -196,6 +216,7 @@ impl Furl {
             ""
         }
     }
+
     fn colon(&self) -> &str {
         if !self.port().is_empty() {
             ":"
@@ -203,6 +224,7 @@ impl Furl {
             ""
         }
     }
+
     fn question(&self) -> &str {
         if !self.query().is_empty() {
             "?"
@@ -210,6 +232,7 @@ impl Furl {
             ""
         }
     }
+
     fn hashtag(&self) -> &str {
         if !self.fragment().is_empty() {
             "#"
@@ -255,6 +278,7 @@ impl Furl {
             None
         }
     }
+
     fn json(&self) -> &str {
         todo!()
     }
@@ -349,9 +373,30 @@ fn main() {
         .chain(stdin.split_ascii_whitespace())
         .flat_map(Furl::from_str);
 
+    // let f = match opt.pattern.as_str() {
+    // "s" | "scheme" | "schemes" => |f: &Furl| f.scheme(),
+    // "c" | "url" => |f: &Furl| f.url(),
+    // "a" | "auth" | "authority" => || Furl::authority,
+    // "u" | "user" | "users" | "username" | "usernames" => || Furl::username,
+    // "x" | "pass" | "password" | "passwords" => || Furl::password,
+    // "d" | "domain" | "domains" => || Furl::domain,
+    // "S" | "sub" | "subdomain" | "subdomains" => || Furl::subdomain,
+    // "r" | "root" | "roots" | "apex" | "apexes" => || Furl::apex,
+    // "n" | "name" | "names" => || Furl::name,
+    // "t" | "tld" | "suffix" => || Furl::suffix,
+    // "P" | "port" | "ports" => || Furl::port,
+    // "p" | "path" | "paths" => || Furl::path,
+    // "q" | "query" | "queries" => || Furl::query,
+    // "k" | "key" | "keys" => || Furl::keys,
+    // "v" | "val" | "value" | "values" => || Furl::values,
+    // "f" | "fragment" | "fragments" => || Furl::fragment,
+    // "json" => || Furl::json,
+    // pat => |f: &Furl| f.format(pat).as_slice(),
+    // };
+
     if opt.pattern == "dedup" {
         let mut args = furls.collect::<Vec<_>>();
-        args.sort();
+        args.sort_unstable();
         args.dedup_by(|a, b| {
             if a == b {
                 // Uniqe keys because of using map
@@ -393,46 +438,44 @@ fn main() {
 }
 
 impl Ord for Furl {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         match self.scheme().cmp(other.scheme()) {
-            std::cmp::Ordering::Equal => match self.authority().cmp(other.authority()) {
-                std::cmp::Ordering::Equal => {
-                    match (self.url.path_segments(), other.url.path_segments()) {
-                        (Some(sp), Some(op)) => {
-                            let sp = sp
-                                .filter(|s| !s.chars().all(|c| c.is_numeric()))
-                                .collect::<Vec<_>>();
-                            let op = op
-                                .filter(|s| !s.chars().all(|c| c.is_numeric()))
-                                .collect::<Vec<_>>();
+            Equal => match self.authority().cmp(other.authority()) {
+                Equal => match (self.url.path_segments(), other.url.path_segments()) {
+                    (Some(sp), Some(op)) => {
+                        let sp = sp
+                            .filter(|s| !s.chars().all(|c| c.is_numeric()))
+                            .collect::<Vec<_>>();
+                        let op = op
+                            .filter(|s| !s.chars().all(|c| c.is_numeric()))
+                            .collect::<Vec<_>>();
 
-                            if sp.len() == op.len() {
-                                let mut diff = 0;
-                                let mut o = std::cmp::Ordering::Equal;
-                                for i in 0..sp.len() {
-                                    if sp[i] != op[i] {
-                                        diff += 1;
+                        if sp.len() == op.len() {
+                            let mut diff = 0;
+                            let mut o = Equal;
+                            for i in 0..sp.len() {
+                                if sp[i] != op[i] {
+                                    diff += 1;
 
-                                        match diff {
-                                            ..=1 => o = sp[i].cmp(op[i]),
-                                            2.. => break,
-                                        }
+                                    match diff {
+                                        ..=1 => o = sp[i].cmp(op[i]),
+                                        2.. => break,
                                     }
                                 }
-
-                                if diff > 1 {
-                                    return o;
-                                }
-                                return std::cmp::Ordering::Equal;
                             }
 
-                            sp.len().cmp(&op.len())
+                            if diff > 1 {
+                                return o;
+                            }
+                            return Equal;
                         }
-                        (None, None) => std::cmp::Ordering::Equal,
-                        (Some(_), None) => std::cmp::Ordering::Greater,
-                        (None, Some(_)) => std::cmp::Ordering::Less,
+
+                        sp.len().cmp(&op.len())
                     }
-                }
+                    (None, None) => Equal,
+                    (Some(_), None) => Greater,
+                    (None, Some(_)) => Less,
+                },
 
                 o => o,
             },
@@ -442,7 +485,7 @@ impl Ord for Furl {
 }
 
 impl PartialOrd for Furl {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
@@ -533,6 +576,10 @@ mod tests {
         let b = Furl::from_str("test.com/a/c").unwrap();
         assert_eq!(a, b);
 
+        let a = Furl::from_str("test.com/a/b/c/d/2").unwrap();
+        let b = Furl::from_str("test.com/a/x/c/d/2").unwrap();
+        assert_eq!(a, b);
+
         let a = Furl::from_str("test.com/a/b/c").unwrap();
         let b = Furl::from_str("test.com/a/c/d").unwrap();
         assert_ne!(a, b);
@@ -563,16 +610,44 @@ mod tests {
 
     #[test]
     fn sort() {
-        let a = Furl::from_str("https://memoryleaks.ir/tag/%d9%87%da%a9/").unwrap();
-        let b = Furl::from_str("https://memoryleaks.ir/author/soloboy/").unwrap();
-        let c = Furl::from_str("https://memoryleaks.ir/tag/rce/").unwrap();
+        let a = Furl::from_str("https://test.com/tag/%d9%87%da%a9/").unwrap();
+        let b = Furl::from_str("https://test.com/author/soloboy/").unwrap();
+        let c = Furl::from_str("https://test.com/tag/rce/").unwrap();
 
         let mut v = vec![a, b, c];
         v.sort();
 
-        let a = Furl::from_str("https://memoryleaks.ir/tag/%d9%87%da%a9/").unwrap();
-        let b = Furl::from_str("https://memoryleaks.ir/author/soloboy/").unwrap();
-        let c = Furl::from_str("https://memoryleaks.ir/tag/rce/").unwrap();
+        let a = Furl::from_str("https://test.com/tag/%d9%87%da%a9/").unwrap();
+        let b = Furl::from_str("https://test.com/author/soloboy/").unwrap();
+        let c = Furl::from_str("https://test.com/tag/rce/").unwrap();
+
+        assert_eq!(v, vec![b, a, c]);
+    }
+
+    #[test]
+    fn sort2() {
+        let a = Furl::from_str(
+            "https://test.com/tag/%d8%a8%d8%a7%da%af-%d8%a8%d8%a7%d9%86%d8%aa%db%8c/page/2/?",
+        )
+        .unwrap();
+        let b = Furl::from_str(
+            "https://test.com/tag/%d8%a7%d9%85%d9%86%db%8c%d8%aa-%d9%88%d8%a8/feed/",
+        )
+        .unwrap();
+        let c = Furl::from_str("https://test.com/tag/%d8%a8%d8%a7%da%af-%d9%87%d8%a7%d9%86%d8%aa%db%8c%d9%86%da%af/page/2/?").unwrap();
+
+        let mut v = vec![a, b, c];
+        v.sort_unstable();
+
+        let a = Furl::from_str(
+            "https://test.com/tag/%d8%a8%d8%a7%da%af-%d8%a8%d8%a7%d9%86%d8%aa%db%8c/page/2/?",
+        )
+        .unwrap();
+        let b = Furl::from_str(
+            "https://test.com/tag/%d8%a7%d9%85%d9%86%db%8c%d8%aa-%d9%88%d8%a8/feed/",
+        )
+        .unwrap();
+        let c = Furl::from_str("https://test.com/tag/%d8%a8%d8%a7%da%af-%d9%87%d8%a7%d9%86%d8%aa%db%8c%d9%86%da%af/page/2/?").unwrap();
 
         assert_eq!(v, vec![b, a, c]);
     }
